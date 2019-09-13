@@ -1,0 +1,8 @@
+rootProject.name = 'JGEnode'
+include 'ecode-core'
+include 'ecode-example'
+include 'enode-queue'
+include 'enode-remoting'
+include 'enode-test'
+include 'enode-common'
+
