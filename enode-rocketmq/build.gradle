@@ -1,0 +1,66 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springbootVersion}")
+    }
+}
+
+apply plugin: 'idea'
+apply plugin: "maven"
+apply plugin: 'maven-publish'
+apply plugin: 'eclipse'
+apply plugin: 'java'
+
+group 'com.kunlv.ddd'
+version '0.0.1-SNAPSHOT'
+
+sourceCompatibility = 1.8
+[compileJava, compileTestJava]*.options*.encoding = "UTF-8"
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+configurations.all {
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
+dependencies {
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+    compile group: 'org.apache.rocketmq', name: 'rocketmq-client', version: '4.5.1'
+    compile "com.kunlv.ddd:enode-core:${enodeVersion}"
+}
+
+//打包源代码
+task sourcesJar(type: Jar, dependsOn: classes) {
+    classifier = 'sources'
+    from sourceSets.main.allSource
+}
+
+subprojects {
+    jar { enabled = true }
+}
+
+artifacts {
+    archives sourcesJar
+    archives jar
+}
+// 指定上传的路径
+def localMavenRepo = 'file://' + new File(System.getProperty('user.home'), '.m2/repository').absolutePath
+// 上传Task，Gradle会生成并上传pom.xml文件。
+uploadArchives {
+    repositories {
+        mavenDeployer {
+            repository(url: localMavenRepo)
+            //构造项目的Pom文件
+            pom.project {
+                name = project.name
+                packaging = 'jar'
+                description = project.name
+            }
+        }
+    }
+}

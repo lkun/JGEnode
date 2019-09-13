@@ -1,0 +1,2 @@
+rootProject.name = 'JGEnode.enode-examples'
+include 'bank-transfer'

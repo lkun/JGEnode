@@ -1,0 +1,5 @@
+rootProject.name = 'JGEnode.enode-examples.bank-transfer'
+include 'example-domain'
+include 'command-web'
+include 'command-consumer'
+include 'event-consumer'

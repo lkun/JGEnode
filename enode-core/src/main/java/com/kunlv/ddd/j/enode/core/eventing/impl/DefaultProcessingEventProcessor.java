@@ -1,0 +1,139 @@
+package com.kunlv.ddd.j.enode.core.eventing.impl;
+
+import com.google.common.base.Strings;
+import com.kunlv.ddd.j.enode.common.exception.ArgumentException;
+import com.kunlv.ddd.j.enode.common.exception.ENodeRuntimeException;
+import com.kunlv.ddd.j.enode.common.io.AsyncTaskResult;
+import com.kunlv.ddd.j.enode.common.io.AsyncTaskStatus;
+import com.kunlv.ddd.j.enode.common.io.IOHelper;
+import com.kunlv.ddd.j.enode.common.io.Task;
+import com.kunlv.ddd.j.enode.common.scheduling.IScheduleService;
+import com.kunlv.ddd.j.enode.core.eventing.DomainEventStreamMessage;
+import com.kunlv.ddd.j.enode.core.eventing.IProcessingEventProcessor;
+import com.kunlv.ddd.j.enode.core.eventing.IPublishedVersionStore;
+import com.kunlv.ddd.j.enode.core.eventing.ProcessingEvent;
+import com.kunlv.ddd.j.enode.core.eventing.ProcessingEventMailBox;
+import com.kunlv.ddd.j.enode.core.messaging.IMessageDispatcher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+/**
+ * @author lvk618@gmail.com
+ */
+public class DefaultProcessingEventProcessor implements IProcessingEventProcessor {
+    private static final Logger logger = LoggerFactory.getLogger(DefaultProcessingEventProcessor.class);
+    private final Object lockObj = new Object();
+    private int timeoutSeconds = 3600 * 24 * 3;
+    private int scanExpiredAggregateIntervalMilliseconds = 5000;
+    private String taskName;
+
+    private String processorName = "DefaultEventProcessor";
+
+    private ConcurrentHashMap<String, ProcessingEventMailBox> mailboxDict;
+
+    @Autowired
+    private IScheduleService scheduleService;
+
+    @Autowired
+    private IMessageDispatcher dispatcher;
+
+    @Autowired
+    private IPublishedVersionStore publishedVersionStore;
+
+    public DefaultProcessingEventProcessor() {
+        mailboxDict = new ConcurrentHashMap<>();
+        taskName = "CleanInactiveProcessingEventMailBoxes_" + System.nanoTime() + new Random().nextInt(10000);
+    }
+
+
+    @Override
+    public void process(ProcessingEvent processingEvent) {
+        String aggregateRootId = processingEvent.getMessage().getAggregateRootId();
+        if (Strings.isNullOrEmpty(aggregateRootId)) {
+            throw new ArgumentException("aggregateRootId of domain event stream cannot be null or empty, domainEventStreamId:" + processingEvent.getMessage().getId());
+        }
+        synchronized (lockObj) {
+            ProcessingEventMailBox mailbox = mailboxDict.computeIfAbsent(aggregateRootId, key -> {
+                int latestHandledEventVersion = getAggregateRootLatestHandledEventVersion(processingEvent.getMessage().getAggregateRootTypeName(), aggregateRootId);
+                return new ProcessingEventMailBox(aggregateRootId, latestHandledEventVersion, y -> dispatchProcessingMessageAsync(y, 0));
+            });
+            mailbox.enqueueMessage(processingEvent);
+        }
+    }
+
+    @Override
+    public void start() {
+        scheduleService.startTask(taskName, this::cleanInactiveMailbox, scanExpiredAggregateIntervalMilliseconds, scanExpiredAggregateIntervalMilliseconds);
+    }
+
+    @Override
+    public void stop() {
+        scheduleService.stopTask(taskName);
+    }
+
+    private void dispatchProcessingMessageAsync(ProcessingEvent processingEvent, int retryTimes) {
+        IOHelper.tryAsyncActionRecursively("DispatchProcessingMessageAsync",
+                () -> dispatcher.dispatchMessagesAsync(processingEvent.getMessage().getEvents()),
+                result -> {
+                    updatePublishedVersionAsync(processingEvent, 0);
+                },
+                () -> String.format("sequence message [messageId:%s, messageType:%s, aggregateRootId:%s, aggregateRootVersion:%s]", processingEvent.getMessage().getId(), processingEvent.getMessage().getClass().getName(), processingEvent.getMessage().getAggregateRootId(), processingEvent.getMessage().getVersion()),
+                errorMessage -> {
+                    logger.error("Dispatching message has unknown exception, the code should not be run to here, errorMessage: {}", errorMessage);
+                },
+                retryTimes, true);
+    }
+
+    private int getAggregateRootLatestHandledEventVersion(String aggregateRootType, String aggregateRootId) {
+        try {
+            AsyncTaskResult<Integer> task = Task.await(publishedVersionStore.getPublishedVersionAsync(processorName, aggregateRootType, aggregateRootId));
+            if (task.getStatus() == AsyncTaskStatus.Success) {
+                return task.getData();
+            } else {
+                throw new Exception("_publishedVersionStore.GetPublishedVersionAsync has unknown exception, errorMessage: " + task.getErrorMessage());
+            }
+        } catch (Exception ex) {
+            throw new ENodeRuntimeException("_publishedVersionStore.GetPublishedVersionAsync has unknown exception.", ex);
+        }
+    }
+
+    private void updatePublishedVersionAsync(ProcessingEvent processingEvent, int retryTimes) {
+        DomainEventStreamMessage message = processingEvent.getMessage();
+        IOHelper.tryAsyncActionRecursively("UpdatePublishedVersionAsync",
+                () -> publishedVersionStore.updatePublishedVersionAsync(processorName, message.getAggregateRootTypeName(), message.getAggregateRootId(), message.getVersion()),
+                result -> {
+                    processingEvent.complete();
+                },
+                () -> String.format("DomainEventStreamMessage [messageId:%s, messageType:%s, aggregateRootId:%s, aggregateRootVersion:%s]", message.getId(), message.getClass().getName(), message.getAggregateRootId(), message.getVersion()),
+                errorMessage -> {
+                    logger.error("Update published version has unknown exception, the code should not be run to here, errorMessage: {}", errorMessage);
+                }, retryTimes, true);
+    }
+
+
+    private void cleanInactiveMailbox() {
+        List<Map.Entry<String, ProcessingEventMailBox>> inactiveList = mailboxDict.entrySet().stream()
+                .filter(entry -> entry.getValue().isInactive(timeoutSeconds)
+                        && !entry.getValue().isRunning()
+                        && entry.getValue().getTotalUnHandledMessageCount() == 0)
+                .collect(Collectors.toList());
+        inactiveList.forEach(entry -> {
+            synchronized (lockObj) {
+                if (entry.getValue().isInactive(timeoutSeconds)
+                        && !entry.getValue().isRunning()
+                        && entry.getValue().getTotalUnHandledMessageCount() == 0) {
+                    if (mailboxDict.remove(entry.getKey()) != null) {
+                        logger.info("Removed inactive domain event stream mailbox, aggregateRootId: {}", entry.getKey());
+                    }
+                }
+            }
+        });
+    }
+}

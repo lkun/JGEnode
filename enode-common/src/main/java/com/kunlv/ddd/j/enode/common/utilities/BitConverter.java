@@ -1,9 +1,13 @@
 package com.kunlv.ddd.j.enode.common.utilities;
 
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
+/**
+ * @author lvk618@gmail.com
+ */
 public class BitConverter {
-    private static final Charset utf8 = Charset.forName("utf-8");
+    private static final Charset UTF8 = StandardCharsets.UTF_8;
 
     public static byte[] getBytes(short v) {
         return new byte[]{(byte) v, (byte) (v >> 8)};
@@ -18,7 +22,7 @@ public class BitConverter {
     }
 
     public static byte[] getBytes(String v) {
-        return v.getBytes(utf8);
+        return v.getBytes(UTF8);
     }
 
     public static short toShort(byte[] b) {
@@ -35,6 +39,6 @@ public class BitConverter {
     }
 
     public static String toString(byte[] b) {
-        return new String(b, utf8);
+        return new String(b, UTF8);
     }
 }

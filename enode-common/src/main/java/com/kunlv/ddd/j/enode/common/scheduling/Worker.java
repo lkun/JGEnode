@@ -1,69 +1,65 @@
 package com.kunlv.ddd.j.enode.common.scheduling;
 
 import com.kunlv.ddd.j.enode.common.function.Action;
-import com.kunlv.ddd.j.enode.common.logging.ENodeLogger;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+/**
+ * @author lvk618@gmail.com
+ */
 public class Worker {
-    private static final Logger _logger = ENodeLogger.getLog();
-
-    private Object _lockObject = new Object();
-    private String _actionName;
-    private Action _action;
-    private Status _status;
+    private static final Logger logger = LoggerFactory.getLogger(Worker.class);
+    private Object lockObject = new Object();
+    private String actionName;
+    private Action action;
+    private Status status;
     private Thread thread;
 
-    public String actionName() {
-        return _actionName;
+    public Worker(String actionName, Action action) {
+        this.actionName = actionName;
+        this.action = action;
+        this.status = Status.Initial;
     }
 
-    public Worker(String actionName, Action action) {
-        _actionName = actionName;
-        _action = action;
-        _status = Status.Initial;
+    public String actionName() {
+        return this.actionName;
     }
 
     public Worker start() {
-        synchronized (_lockObject) {
-            if (_status.equals(Status.Running)) return this;
-
-            _status = Status.Running;
-
-            thread = new Thread(this::loop, String.format("%s.Worker", _actionName));
-
+        synchronized (lockObject) {
+            if (status.equals(Status.Running)) {
+                return this;
+            }
+            status = Status.Running;
+            thread = new Thread(this::loop, String.format("%s.Worker", actionName));
             thread.setDaemon(true);
-
             thread.start();
-
             return this;
         }
     }
 
     public Worker stop() {
-        synchronized (_lockObject) {
-            if (_status.equals(Status.StopRequested)) return this;
-
-            _status = Status.StopRequested;
-
+        synchronized (lockObject) {
+            if (status.equals(Status.StopRequested)) {
+                return this;
+            }
+            status = Status.StopRequested;
             thread.interrupt();
-
-            _logger.info("Worker thread shutdown,thread id:{}", thread.getName());
-
+            logger.info("Worker thread shutdown, thread id:{}", thread.getName());
             return this;
         }
     }
 
     private void loop() {
-        while (this._status == Status.Running) {
+        while (this.status == Status.Running) {
             try {
-                _action.apply();
+                action.apply();
             } catch (InterruptedException e) {
-                if (_status != Status.StopRequested) {
-                    _logger.info("Worker thread caught ThreadAbortException, try to resetting, actionName:{}", _actionName);
-                    _logger.info("Worker thread ThreadAbortException resetted, actionName:{}", _actionName);
+                if (status != Status.StopRequested) {
+                    logger.info("Worker thread caught ThreadAbortException, try to resetting, actionName:{}", actionName);
                 }
             } catch (Exception ex) {
-                _logger.error(String.format("Worker thread has exception, actionName:%s", _actionName), ex);
+                logger.error(String.format("Worker thread has exception, actionName:%s", actionName), ex);
             }
         }
     }

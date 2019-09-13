@@ -2,53 +2,53 @@ package com.kunlv.ddd.j.enode.common.scheduling;
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.kunlv.ddd.j.enode.common.function.Action;
-import com.kunlv.ddd.j.enode.common.logging.ENodeLogger;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * @author lvk618@gmail.com
+ */
 public class ScheduleService implements IScheduleService {
-    private static final Logger _logger = ENodeLogger.getLog();
-
-    private Object _lockObject = new Object();
-    private Map<String, TimerBasedTask> _taskDict = new HashMap<>();
+    private static final Logger logger = LoggerFactory.getLogger(ScheduleService.class);
+    private final Object lockObject = new Object();
+    private Map<String, TimerBasedTask> taskDict = new HashMap<>();
     private ScheduledExecutorService scheduledThreadPool;
 
     public ScheduleService() {
-        scheduledThreadPool = Executors.newScheduledThreadPool(2,
-                new ThreadFactoryBuilder().setDaemon(true).setNameFormat("ScheduleService-%d").build());
+        scheduledThreadPool = new ScheduledThreadPoolExecutor(2, new ThreadFactoryBuilder().setDaemon(true).setNameFormat("ScheduleService-%d").build());
     }
 
     @Override
     public void startTask(String name, Action action, int dueTime, int period) {
-        synchronized (_lockObject) {
-            if (_taskDict.containsKey(name)) return;
-
+        synchronized (lockObject) {
+            if (taskDict.containsKey(name)) {
+                return;
+            }
             ScheduledFuture<?> scheduledFuture = scheduledThreadPool.scheduleWithFixedDelay(new TaskCallback(name), dueTime, period, TimeUnit.MILLISECONDS);
-
-            _taskDict.put(name, new TimerBasedTask(name, action, scheduledFuture, dueTime, period, false));
+            taskDict.put(name, new TimerBasedTask(name, action, scheduledFuture, dueTime, period, false));
         }
     }
 
     @Override
     public void stopTask(String name) {
-        synchronized (_lockObject) {
-            if (_taskDict.containsKey(name)) {
-                TimerBasedTask task = _taskDict.get(name);
+        synchronized (lockObject) {
+            if (taskDict.containsKey(name)) {
+                TimerBasedTask task = taskDict.get(name);
                 task.setStopped(true);
                 task.getScheduledFuture().cancel(false);
-                _taskDict.remove(name);
+                taskDict.remove(name);
             }
         }
     }
 
     class TaskCallback implements Runnable {
-
         private String taskName;
 
         public TaskCallback(String taskName) {
@@ -57,15 +57,14 @@ public class ScheduleService implements IScheduleService {
 
         @Override
         public void run() {
-            TimerBasedTask task = _taskDict.get(taskName);
-
+            TimerBasedTask task = taskDict.get(taskName);
             if (task != null) {
                 try {
                     if (!task.isStopped()) {
                         task.action.apply();
                     }
                 } catch (Exception ex) {
-                    _logger.error(String.format("Task has exception, name: %s, due: %d, period: %d", task.getName(), task.getDueTime(), task.getPeriod()), ex);
+                    logger.error("Task has exception, name: {}, due: {}, period: {}", task.getName(), task.getDueTime(), task.getPeriod(), ex);
                 }
             }
         }
