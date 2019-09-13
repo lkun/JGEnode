@@ -21,8 +21,6 @@ enode是一个基于【DDD】【CQRS】【ES】【EDA】【In-Memory】架构风
 - 通过基于分布式消息队列横向扩展的方式实现系统的可伸缩性（基于队列的动态扩容/缩容）
 - enode实现了CQRS架构面临的大部分技术问题，让开发者可以专注于业务逻辑和业务流程的开发，而无需关心纯技术问题
 
-## 系统设计
-> [enode执行过程](http://anruence.com/2019/06/13/enode-arch/)
 ## 注意点
 ### ICommandService sendAsync 和 executeAsync的区别
 sendAsync只关注发送消息的结果
