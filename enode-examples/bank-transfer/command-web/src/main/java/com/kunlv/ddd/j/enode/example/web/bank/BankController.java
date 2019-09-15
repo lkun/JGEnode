@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.concurrent.ExecutionException;
+
 @RestController
 @RequestMapping("/bank")
 public class BankController {
@@ -40,7 +42,9 @@ public class BankController {
     }
 
     @RequestMapping("transfer")
-    public Object transfer(@RequestParam("data") String data) {
+    public Object transfer(@RequestParam("sourceAccountId") String sourceAccountId, @RequestParam("targetAccountId") String targetAccountId) throws ExecutionException, InterruptedException {
+        //账户1向账户3转账300元，交易会失败，因为账户3不存在
+        commandService.sendAsync(new StartTransferTransactionCommand(ObjectId.generateNewStringId(), new TransferTransactionInfo(sourceAccountId, targetAccountId, 300D))).get();
         return "success";
     }
 }

@@ -1,6 +1,19 @@
-plugins {
-    id 'java'
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:${springbootVersion}")
+    }
 }
+
+apply plugin: 'idea'
+apply plugin: "maven"
+apply plugin: 'maven-publish'
+apply plugin: 'eclipse'
+apply plugin: 'java'
+apply plugin: 'org.springframework.boot'
+apply plugin: 'io.spring.dependency-management'
 
 group 'com.kunlv.ddd'
 version '0.0.1-SNAPSHOT'
@@ -8,9 +21,18 @@ version '0.0.1-SNAPSHOT'
 sourceCompatibility = 1.8
 
 repositories {
+    mavenLocal()
+    maven { url "http://maven.aliyun.com/nexus/content/groups/public/" }
     mavenCentral()
 }
-
 dependencies {
     testCompile group: 'junit', name: 'junit', version: '4.12'
+    compile "com.kunlv.ddd:example-domain:${enodeVersion}"
+    compile "com.kunlv.ddd:enode-rocketmq:${enodeVersion}"
+    compile "com.kunlv.ddd:enode-kafka:${enodeVersion}"
+    compile "com.kunlv.ddd:enode-mysql:${enodeVersion}"
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }

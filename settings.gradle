@@ -7,6 +7,8 @@ include 'enode-common'
 include 'enode-mysql'
 include 'enode-rocketmq'
 include 'enode-examples'
+include 'enode-kafka'
+
 include 'enode-examples:bank-transfer'
 findProject(':enode-examples:bank-transfer')?.name = 'bank-transfer'
 include 'enode-examples:bank-transfer:example-domain'
